@@ -1,0 +1,173 @@
+//@version=5
+indicator(title="OHLCV Data Exporter", shorttitle="DataExport",
+          overlay=true, max_bars_back=500)
+
+// ─── INPUTS ──────────────────────────────────────────────────────────────────
+i_lookback  = input.int(50,    "Rows to show",   minval=1,  maxval=500)
+i_tbl_pos   = input.string("Bottom Right", "Table position",
+                  options=["Top Left","Top Right","Bottom Left","Bottom Right",
+                           "Middle Left","Middle Right","Middle Center"])
+i_date_fmt  = input.string("yyyy-MM-dd", "Date format",
+                  options=["yyyy-MM-dd","MM/dd/yyyy","dd-MM-yyyy"])
+i_time_fmt  = input.string("HH:mm",     "Time format",
+                  options=["HH:mm","HH:mm:ss"])
+i_bull_col  = input.color(color.new(color.green, 70), "Bullish row color")
+i_bear_col  = input.color(color.new(color.red,   70), "Bearish row color")
+i_doji_col  = input.color(color.new(color.gray,  70), "Doji row color")
+i_txt_col   = input.color(color.white,             "Text color")
+i_decimals  = input.int(2, "Price decimals", minval=0, maxval=8)
+i_alert_en  = input.bool(true, "Enable CSV alerts")
+i_plot_en   = input.bool(true, "Enable hidden plots (Premium export)")
+
+// ─── POSITION MAP ────────────────────────────────────────────────────────────
+_pos(s) =>
+    switch s
+        "Top Left"      => position.top_left
+        "Top Right"     => position.top_right
+        "Bottom Left"   => position.bottom_left
+        "Bottom Right"  => position.bottom_right
+        "Middle Left"   => position.middle_left
+        "Middle Right"  => position.middle_right
+        => position.middle_center
+
+// ─── COLUMN DEFINITIONS ──────────────────────────────────────────────────────
+// ★ EXTENSIBILITY: to add a new data column, append ONE entry to each array.
+//   Example to add High:
+//     col_headers  → append "High"
+//     col_is_price → append true
+//   Then update N_COLS and the capture tuple in DATA MATRIX below.
+col_headers  = array.from("Row#", "Date", "Time", "Open", "Close")
+col_is_price = array.from(false,   false,  false,  true,   true)
+
+// ─── DATA MATRIX ─────────────────────────────────────────────────────────────
+// Number of numeric data columns (excludes Row#, Date, Time display columns)
+// ★ EXTENSIBILITY: increment N_COLS when adding a new field
+int N_COLS = 2  // open, close
+
+// Rolling matrix: rows = bars captured, cols = N_COLS
+var matrix<float> m_data  = matrix.new<float>(0, N_COLS, na)
+var array<int>    m_times = array.new<int>(0)
+
+if barstate.isconfirmed
+    // ★ EXTENSIBILITY: append the new series here, e.g.:
+    //   array.from(open, close, high)           // + High
+    //   array.from(open, close, high, low)       // + OHLC
+    //   array.from(open, close, high, low, volume) // + full OHLCV
+    row = array.from(open, close)
+
+    matrix.add_row(m_data,  matrix.rows(m_data), row)
+    array.push(m_times, time)
+
+    // Trim to lookback window (keep only the most recent i_lookback bars)
+    if matrix.rows(m_data) > i_lookback
+        matrix.remove_row(m_data, 0)
+        array.shift(m_times)
+
+// ─── TABLE ───────────────────────────────────────────────────────────────────
+int N_DISPLAY_COLS = array.size(col_headers)  // Row# + Date + Time + data cols
+
+// var ensures the table object persists; re-created automatically on settings reload
+var table tbl = table.new(
+     _pos(i_tbl_pos),
+     columns      = N_DISPLAY_COLS,
+     rows         = i_lookback + 1,  // +1 for header row
+     bgcolor      = color.new(color.black, 85),
+     border_width = 1,
+     border_color = color.new(color.gray, 60),
+     frame_width  = 2,
+     frame_color  = color.new(color.gray, 40))
+
+if barstate.islast
+    int n_rows = matrix.rows(m_data)
+
+    // ── Header row ───────────────────────────────────────────────────────────
+    for col = 0 to N_DISPLAY_COLS - 1
+        table.cell(tbl, col, 0,
+             text        = array.get(col_headers, col),
+             text_color  = i_txt_col,
+             bgcolor     = color.new(color.navy, 30),
+             text_size   = size.small,
+             text_halign = text.align_center)
+
+    // ── Data rows (newest bar at top, oldest at bottom) ───────────────────────
+    string fmt = "#." + str.repeat("0", i_decimals)
+
+    for r = 0 to i_lookback - 1
+        int  tbl_row  = 1 + r          // table row index (0 = header)
+        bool has_data = r < n_rows
+        int  mat_row  = n_rows - 1 - r // index inversion: newest row first
+        int  bar_num  = n_rows - r     // display bar number
+
+        // Row background color based on bar direction
+        float o = has_data ? matrix.get(m_data, mat_row, 0) : na
+        float c = has_data ? matrix.get(m_data, mat_row, 1) : na
+        color row_bg = not has_data    ? color.new(color.black, 100) :
+                       c > o           ? i_bull_col :
+                       c < o           ? i_bear_col : i_doji_col
+
+        // Col 0: Row number
+        table.cell(tbl, 0, tbl_row,
+             text        = has_data ? str.tostring(bar_num) : "",
+             bgcolor     = row_bg,
+             text_color  = i_txt_col,
+             text_size   = size.small,
+             text_halign = text.align_center)
+
+        // Col 1: Date
+        int ts = has_data ? array.get(m_times, mat_row) : na
+        table.cell(tbl, 1, tbl_row,
+             text        = has_data ? str.format_time(ts, i_date_fmt, syminfo.timezone) : "",
+             bgcolor     = row_bg,
+             text_color  = i_txt_col,
+             text_size   = size.small,
+             text_halign = text.align_center)
+
+        // Col 2: Time
+        table.cell(tbl, 2, tbl_row,
+             text        = has_data ? str.format_time(ts, i_time_fmt, syminfo.timezone) : "",
+             bgcolor     = row_bg,
+             text_color  = i_txt_col,
+             text_size   = size.small,
+             text_halign = text.align_center)
+
+        // Cols 3+: Numeric data columns (loop is data-driven — no changes needed here)
+        for dc = 0 to N_COLS - 1
+            float val = has_data ? matrix.get(m_data, mat_row, dc) : na
+            table.cell(tbl, 3 + dc, tbl_row,
+                 text        = has_data ? str.tostring(val, fmt) : "",
+                 bgcolor     = row_bg,
+                 text_color  = i_txt_col,
+                 text_size   = size.small,
+                 text_halign = text.align_right)
+
+// ─── CSV ALERT ───────────────────────────────────────────────────────────────
+// Fires once per confirmed bar close. Message format:
+//   SYMBOL,DATE,TIME,OPEN,CLOSE
+// Collect from TradingView's Alerts panel history, paste into a text file,
+// save as .csv, then open directly in Excel.
+// ★ EXTENSIBILITY: uncomment/append fields in csv_msg below
+if i_alert_en and barstate.isconfirmed
+    string fmt      = "#." + str.repeat("0", i_decimals)
+    string csv_date = str.format_time(time, i_date_fmt, syminfo.timezone)
+    string csv_time = str.format_time(time, i_time_fmt, syminfo.timezone)
+
+    string csv_msg  = syminfo.ticker             + "," +
+                      csv_date                   + "," +
+                      csv_time                   + "," +
+                      str.tostring(open,  fmt)   + "," +
+                      str.tostring(close, fmt)
+                      // + "," + str.tostring(high,   fmt)  // ← add High
+                      // + "," + str.tostring(low,    fmt)  // ← add Low
+                      // + "," + str.tostring(volume, fmt)  // ← add Volume
+
+    alert(csv_msg, alert.freq_once_per_bar_close)
+
+// ─── HIDDEN PLOTS (TradingView Premium "Export chart data") ──────────────────
+// Invisible on chart but available in TradingView Premium's native CSV export.
+// Right-click chart → "Export chart data..." to download as CSV → open in Excel.
+// ★ EXTENSIBILITY: uncomment one line per new field
+plot(i_plot_en ? open  : na, title="Open",  display=display.none, editable=false)
+plot(i_plot_en ? close : na, title="Close", display=display.none, editable=false)
+// plot(i_plot_en ? high   : na, title="High",   display=display.none, editable=false)
+// plot(i_plot_en ? low    : na, title="Low",    display=display.none, editable=false)
+// plot(i_plot_en ? volume : na, title="Volume", display=display.none, editable=false)
