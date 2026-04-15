@@ -6,7 +6,7 @@ A collection of PineScript v5 indicators for quantitative research.
 
 ## `indicators/data_exporter.pine`
 
-Displays recent bar data in an on-chart table and provides three paths to get that data into Excel.
+Displays recent bar data in an on-chart table and exports it as CSV via TradingView alerts — no Premium subscription required.
 
 ### What it shows (currently)
 
@@ -18,7 +18,7 @@ Displays recent bar data in an on-chart table and provides three paths to get th
 | Open   | Open price |
 | Close  | Close price |
 
-Rows are color-coded: green = bullish bar, red = bearish, gray = dojo.
+Rows are color-coded: green = bullish bar, red = bearish, gray = doji.
 
 ---
 
@@ -31,48 +31,47 @@ Rows are color-coded: green = bullish bar, red = bearish, gray = dojo.
 
 ---
 
-### Getting data into Excel — three methods
+### Getting data into Excel
 
-#### Method 1: Alert CSV history (all plans)
+#### Method 1: Alert CSV (recommended — all plans)
 
-Best for collecting a few hundred bars automatically.
+Each confirmed bar close fires an alert with a CSV-formatted message:
+```
+AAPL,2024-01-15,09:30,150.25,152.10
+```
 
+**Setup:**
 1. In TradingView, open the **Alerts** panel (clock icon, right toolbar).
 2. Click **+ Add Alert**.
 3. Condition: select **DataExport** → **alert() function calls**.
-4. Notifications: enable **TradingView website notifications** (or a Webhook URL if you have a server).
+4. Notifications: enable **TradingView website notifications**.
 5. Click **Create**.
-6. Let the market run — or use **Bar Replay** to replay history and collect alerts.
-7. After collection: Alerts panel → click the alert → **Alert History**.
-8. Each entry is one CSV row: `AAPL,2024-01-15,09:30,150.25,152.10`.
-9. Copy all entries → paste into a text editor → save as `data.csv` → open in Excel.
 
-> **Note:** TradingView caps alert history entries depending on your plan (~200–2000). For large datasets, point the webhook at a small local server (e.g., Python Flask) that appends each POST body line to a `.csv` file.
+**Collecting the data:**
+- Go to the Alerts panel → click the alert → **Alert History**.
+- Each entry is one CSV row.
+- Copy all entries → paste into a text file → save as `data.csv` → open in Excel.
 
-#### Method 2: TradingView Premium — native CSV export
+> **For longer history:** point the alert at a **Webhook URL** (any plan that supports webhooks). A small local server (e.g. a Python Flask script listening on a public URL via ngrok) receives each POST and appends the body line to a `.csv` file. This bypasses TradingView's alert history cap.
 
-If you have a Premium plan, this is the fastest path.
+> **For backtesting periods:** use TradingView's **Bar Replay** feature with the alert active to replay historical bars and collect the CSV rows in real time.
 
-1. Add the indicator to the chart (the hidden `plot()` calls register data series invisibly).
-2. Right-click anywhere on the chart → **Export chart data...**
-3. Check **Open** and **Close** (and any other fields you've added).
-4. Download → open directly in Excel.
+**Paste header:** when opening in Excel, the first row should be the column header. Add it manually:
+```
+Symbol,Date,Time,Open,Close
+```
 
-#### Method 3: On-chart table → manual copy
+#### Method 2: On-chart table → manual copy
 
-Good for quick spot-checks, not bulk export.
-
-1. The table appears on the chart (default: bottom-right).
-2. Visually inspect values.
-3. For small datasets: screenshot + image-to-table tool, or manually transcribe.
+Good for quick spot-checks of a small number of bars. The table appears on the chart (default: bottom-right). Visually inspect or manually transcribe values.
 
 ---
 
 ### Adding more fields (High, Low, Volume, …)
 
-All extension points are marked with `// ★ EXTENSIBILITY` comments in the source. To add **High** as an example:
+All extension points are marked with `// ★ EXTENSIBILITY` comments in the source. To add **High** as an example — 5 lines, all in clearly marked sections:
 
-**Step 1** — `col_headers`: append `"High"`
+**Step 1** — `col_headers` / `col_is_price`: append new column
 ```pine
 col_headers  = array.from("Row#", "Date", "Time", "Open", "Close", "High")
 col_is_price = array.from(false,   false,  false,  true,   true,    true)
@@ -88,14 +87,9 @@ int N_COLS = 3
 row = array.from(open, close, high)
 ```
 
-**Step 4** — CSV alert: uncomment
+**Step 4** — CSV alert: append field
 ```pine
-// + "," + str.tostring(high, fmt)   →   + "," + str.tostring(high, fmt)
-```
-
-**Step 5** — hidden plot: uncomment
-```pine
-// plot(i_plot_en ? high : na, title="High", display=display.none, editable=false)
+str.tostring(close, fmt) + "," + str.tostring(high, fmt)
 ```
 
 The table rendering loop is already data-driven — no changes needed there.

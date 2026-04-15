@@ -17,7 +17,6 @@ i_doji_col  = input.color(color.new(color.gray,  70), "Doji row color")
 i_txt_col   = input.color(color.white,             "Text color")
 i_decimals  = input.int(2, "Price decimals", minval=0, maxval=8)
 i_alert_en  = input.bool(true, "Enable CSV alerts")
-i_plot_en   = input.bool(true, "Enable hidden plots (Premium export)")
 
 // ─── POSITION MAP ────────────────────────────────────────────────────────────
 _pos(s) =>
@@ -162,12 +161,3 @@ if i_alert_en and barstate.isconfirmed
 
     alert(csv_msg, alert.freq_once_per_bar_close)
 
-// ─── HIDDEN PLOTS (TradingView Premium "Export chart data") ──────────────────
-// Invisible on chart but available in TradingView Premium's native CSV export.
-// Right-click chart → "Export chart data..." to download as CSV → open in Excel.
-// ★ EXTENSIBILITY: uncomment one line per new field
-plot(i_plot_en ? open  : na, title="Open",  display=display.none, editable=false)
-plot(i_plot_en ? close : na, title="Close", display=display.none, editable=false)
-// plot(i_plot_en ? high   : na, title="High",   display=display.none, editable=false)
-// plot(i_plot_en ? low    : na, title="Low",    display=display.none, editable=false)
-// plot(i_plot_en ? volume : na, title="Volume", display=display.none, editable=false)
